@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PD Warrant System</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        body {
+            visibility: hidden;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: transparent;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        
+        body.visible {
+            visibility: visible;
+            opacity: 1;
+        }
+        
+        .hidden {
+            display: none !important;
+        }
+        
+        #app {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.5);
+        }
+    </style>
+</head>
+<body>
+    <div id="app" v-if="tabletVisible">
+        <!-- Main Tablet Interface -->
+        <div id="tablet" class="container" v-if="currentScreen === 'main'">
+            <header class="header">
+                <h1>📋 Warrant System</h1>
+                <button class="btn-close" @click="closeTablet">×</button>
+            </header>
+            
+            <div class="nav-tabs">
+                <button class="tab-btn" :class="{active: activeTab === 'search'}" @click="activeTab = 'search'">
+                    🔍 Search Warrants
+                </button>
+                <button class="tab-btn" :class="{active: activeTab === 'all'}" @click="loadAllWarrants">
+                    📄 All Active Warrants
+                </button>
+                <button class="tab-btn" :class="{active: activeTab === 'issue'}" @click="activeTab = 'issue'">
+                    ⚡ Issue Warrant
+                </button>
+            </div>
+
+            <!-- Search Tab -->
+            <div v-if="activeTab === 'search'" class="tab-content">
+                <div class="search-box">
+                    <input type="text" v-model="searchTerm" placeholder="Enter name or citizen ID..." class="search-input" @keyup.enter="searchWarrants">
+                    <button @click="searchWarrants" class="btn-primary">Search</button>
+                </div>
+                
+                <div v-if="searchResults.length > 0" class="results">
+                    <h3>Search Results ({{ searchResults.length }})</h3>
+                    <div v-for="warrant in searchResults" :key="warrant.id" class="warrant-card">
+                        <h3>{{ warrant.name }}</h3>
+                        <p><strong>Warrant ID:</strong> #{{ warrant.id }}</p>
+                        <p><strong>CID:</strong> {{ warrant.citizenid || 'N/A' }}</p>
+                        <p><strong>Reason:</strong> {{ warrant.reason }}</p>
+                        <p><strong>Evidence:</strong> {{ warrant.evidence }}</p>
+                        <p><strong>Bounty:</strong> ${{ warrant.bounty }}</p>
+                        <p><strong>Issued by:</strong> {{ warrant.officer_name }}</p>
+                        <p><strong>Date:</strong> {{ formatDate(warrant.issued_date) }}</p>
+                        <p><strong>Expires:</strong> {{ formatDate(warrant.expiry_date) }}</p>
+                        <button @click="revokeWarrant(warrant.id)" class="btn-danger">Revoke Warrant</button>
+                    </div>
+                </div>
+                <div v-else-if="searchTerm" class="no-results">
+                    <p>No active warrants found for: "{{ searchTerm }}"</p>
+                </div>
+            </div>
+
+            <!-- All Warrants Tab -->
+            <div v-if="activeTab === 'all'" class="tab-content">
+                <h3>All Active Warrants ({{ warrants.length }})</h3>
+                <div v-if="warrants.length > 0" class="warrants-list">
+                    <div v-for="warrant in warrants" :key="warrant.id" class="warrant-card">
+                        <h3>#{{ warrant.id }} - {{ warrant.name }}</h3>
+                        <p><strong>CID:</strong> {{ warrant.citizenid || 'N/A' }}</p>
+                        <p><strong>Reason:</strong> {{ warrant.reason }}</p>
+                        <p><strong>Evidence:</strong> {{ warrant.evidence }}</p>
+                        <p><strong>Bounty:</strong> ${{ warrant.bounty }}</p>
+                        <p><strong>Issued by:</strong> {{ warrant.officer_name }}</p>
+                        <p><strong>Issued:</strong> {{ formatDate(warrant.issued_date) }}</p>
+                        <p><strong>Expires:</strong> {{ formatDate(warrant.expiry_date) }}</p>
+                        <button @click="revokeWarrant(warrant.id)" class="btn-danger">Revoke Warrant</button>
+                    </div>
+                </div>
+                <div v-else class="no-results">
+                    <p>No active warrants found</p>
+                </div>
+            </div>
+
+            <!-- Issue Warrant Tab -->
+            <div v-if="activeTab === 'issue'" class="tab-content">
+                <h3>Issue New Warrant</h3>
+                <div class="form-group">
+                    <label>Suspect Name: *</label>
+                    <input type="text" v-model="newWarrant.name" class="form-input" placeholder="Required">
+                </div>
+                <div class="form-group">
+                    <label>Citizen ID:</label>
+                    <input type="text" v-model="newWarrant.citizenid" class="form-input" placeholder="Optional">
+                </div>
+                <div class="form-group">
+                    <label>Reason: *</label>
+                    <textarea v-model="newWarrant.reason" class="form-input" placeholder="Required - Describe the crime"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Evidence:</label>
+                    <textarea v-model="newWarrant.evidence" class="form-input" placeholder="Optional - Initial evidence notes"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Bounty Amount:</label>
+                    <input type="number" v-model="newWarrant.bounty" class="form-input" placeholder="0" min="0">
+                </div>
+                <div class="form-group">
+                    <label>Expiry (hours):</label>
+                    <input type="number" v-model="newWarrant.expiry" class="form-input" placeholder="0 = never expires" min="0">
+                </div>
+                <button @click="issueWarrant" class="btn-primary">Continue to Evidence</button>
+            </div>
+        </div>
+
+        <!-- Evidence Input Screen -->
+        <div id="evidence-input" class="container" v-if="currentScreen === 'evidence'">
+            <header class="header">
+                <h1>Confirm Warrant Issue</h1>
+            </header>
+            
+            <div class="warrant-preview">
+                <h3>Warrant Summary</h3>
+                <p><strong>Suspect:</strong> {{ warrantData.name }}</p>
+                <p><strong>Citizen ID:</strong> {{ warrantData.citizenid || 'Not specified' }}</p>
+                <p><strong>Reason:</strong> {{ warrantData.reason }}</p>
+                <p><strong>Bounty:</strong> ${{ warrantData.bounty || 0 }}</p>
+                <p><strong>Expiry:</strong> {{ warrantData.expiry > 0 ? warrantData.expiry + ' hours' : 'Never' }}</p>
+            </div>
+
+            <div class="form-group">
+                <label>Evidence Details: *</label>
+                <textarea v-model="evidence" placeholder="Required - Provide detailed evidence for this warrant..." class="form-input" rows="6"></textarea>
+            </div>
+
+            <div class="button-group">
+                <button @click="cancelIssue" class="btn-secondary">Cancel</button>
+                <button @click="confirmIssue" class="btn-primary" :disabled="!evidence.trim()">Issue Warrant</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
